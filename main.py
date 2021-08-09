@@ -49,10 +49,10 @@ def main(args):
     pymaf_output = os.path.join(output_folder, 'pymaf')
     kps_final = os.path.join(output_folder, 'kps_final', image_name)
     opt_output = os.path.join(output_folder, 'opt', image_name)
-    # sub_call(f"python3 test.py --input={image_folder} --output {kps_output} --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
-    # sub_call(f"python3 demo_wd.py --output_folder={pymaf_output} --checkpoint={pymaf_checkpoint} --image_folder {image_folder}", os.path.dirname(pymaf_path))
-    # sub_call(f"python3 main.py --img_folders={image_folder} --kps_results {kps_output} --output {kps_final}", os.path.dirname(kps_manager_path))
-    # sub_call(f"python3 demo_single_cam.py --img_folders={image_folder} --results_3d {os.path.join(pymaf_output, image_name)} --results_2d {kps_final} --output {opt_output}", os.path.dirname(optimizer_path))
+    sub_call(f"python3 test.py --input={image_folder} --output {kps_output} --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
+    sub_call(f"python3 demo_wd.py --output_folder={pymaf_output} --checkpoint={pymaf_checkpoint} --image_folder {image_folder}", os.path.dirname(pymaf_path))
+    sub_call(f"python3 main.py --img_folders={image_folder} --kps_results {kps_output} --output {kps_final}", os.path.dirname(kps_manager_path))
+    sub_call(f"python3 demo_single_cam.py --img_folders={image_folder} --results_3d {os.path.join(pymaf_output, image_name)} --results_2d {kps_final} --output {opt_output}", os.path.dirname(optimizer_path))
 
     pids = []
     for opt_npz in glob.glob(os.path.join(opt_output, "*")):
