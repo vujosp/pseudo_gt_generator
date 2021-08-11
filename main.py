@@ -121,17 +121,21 @@ def main(args):
         # TODO
         pass
 
-    args.output = '/home/wd-vujos/Desktop/monoperfcap_copy/'
+    args.output = '/home/wd-vujos/Desktop/monoperfcap/'
 
     all_datasets = []
-    for img_folder in tqdm(glob.glob('/mnt/nas2/datasets/3dpose_datasets/monoperfcap/*/')): # We skip first for now
-        actual_image_name = os.path.basename(img_folder[:-1])
-        args.image_folder = os.path.join(img_folder, actual_image_name, 'images')
+    for img_folder in tqdm(glob.glob('/mnt/nas2/datasets/3dpose_datasets/monoperfcap/*/*/images/')): # We skip first for now
+        if len(glob.glob(img_folder + '*.png')) > 2000:
+            continue
+
+        actual_image_name = img_folder.split('/')[-3]
+        args.image_folder = img_folder
 
         num_of_threads = args.num_of_threads or 8
 
         pymaf_checkpoint = args.pymaf_checkpoint  or "/mnt/nas/models/PyMAF/logs/pymaf_res50_mix/pymaf_res50_mix_as_lp3_mlp256-128-64-5_Jun07-09-14-53-KNj/checkpoints/model_best.pt"
         image_folder = args.image_folder
+        # output_folder = args.output
         output_folder = os.path.join(args.output, actual_image_name)
 
         if not os.path.isabs(output_folder):
@@ -148,26 +152,25 @@ def main(args):
         kps_final = os.path.join(output_folder, 'kps_final', image_name)
         opt_output = os.path.join(output_folder, 'opt', image_name)
 
-        # run_mpt(image_folder)
-        #sub_call(f"python3 test.py --input='{image_folder}' --output '{kps_output}' --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
-        #sub_call(f"python3 demo_wd.py --output_folder='{pymaf_output}' --checkpoint='{pymaf_checkpoint}' --image_folder '{image_folder}' --no_render", os.path.dirname(pymaf_path))
-        # sub_call(f"python3 main.py --img_folders='{image_folder}' --kps_results '{kps_output}' --output '{kps_final}'", os.path.dirname(kps_manager_path))
+        run_mpt(image_folder)
+        sub_call(f"python3 test.py --input='{image_folder}' --output '{kps_output}' --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
+        sub_call(f"python3 demo_wd.py --output_folder='{pymaf_output}' --checkpoint='{pymaf_checkpoint}' --image_folder '{image_folder}' --no_render", os.path.dirname(pymaf_path))
+        sub_call(f"python3 main.py --img_folders='{image_folder}' --kps_results '{kps_output}' --output '{kps_final}'", os.path.dirname(kps_manager_path))
         sub_call(f"python3 demo_single_cam.py --img_folders='{image_folder}' --results_3d '{os.path.join(pymaf_output, image_name)}' --results_2d '{kps_final}' --output '{opt_output}'", os.path.dirname(optimizer_path))
-
+        
         for opt_npz in glob.glob(os.path.join(opt_output, "*_blender_params_optimization.npz")):
             p_id = os.path.basename(opt_npz).split('_')[0]
             blender_output = os.path.join(output_folder, 'blender', p_id + '.blend')
-            sub_call(f"blender --background --python output_to.py -- --keep_scene --fbx_file male --cam_type PERSP --name {p_id}_optim --background_image='{image_folder}' --npz_file '{os.path.join(opt_output, p_id + '_blender_params_optimization.npz')}' --blender_file_path '{blender_output}'", os.path.dirname(sdg_path))
-            sub_call(f"blender {blender_output} --background --python output_to.py -- --keep_scene --aperture 25 --focal_length 25 --fbx_file male --cam_type PERSP --name {p_id}_orig --background_image='{image_folder}' --npz_file '{os.path.join(pymaf_output, image_name, p_id + '_blender_params.npz')}' --blender_file_path '{blender_output}'", os.path.dirname(sdg_path))
+            sub_call(f"blender --background --python output_to.py -- --keep_scene --aperture 25 --focal_length 25 --fbx_file male --cam_type PERSP --name {p_id}_orig --background_image='{image_folder}' --npz_file '{os.path.join(pymaf_output, image_name, p_id + '_blender_params.npz')}' --blender_file_path '{blender_output}'", os.path.dirname(sdg_path))
+            sub_call(f"blender {blender_output} --background --python output_to.py -- --keep_scene --fbx_file male --cam_type PERSP --name {p_id}_optim --background_image='{image_folder}' --npz_file '{os.path.join(opt_output, p_id + '_blender_params_optimization.npz')}' --blender_file_path '{blender_output}'", os.path.dirname(sdg_path))
             os.remove(blender_output + "1")
-
-        # try:
-        #     export_as_ds(os.path.join(output_folder, 'dataset'), opt_output, kps_final, args.image_folder)
-        #     all_datasets.append(os.path.join(output_folder, 'dataset.npz'))
-        # except Exception as e:
-        #     print(e)
-
-        exit()
+        
+        try:
+            export_as_ds(os.path.join(output_folder, 'dataset'), opt_output, kps_final, args.image_folder)
+            all_datasets.append(os.path.join(output_folder, 'dataset.npz'))
+        except Exception as e:
+            print(e)
+    exit()
     merge_npz(os.path.join(args.output, 'datasets.npz'), all_datasets)
 
 if __name__ == "__main__":
