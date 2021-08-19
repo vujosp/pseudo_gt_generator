@@ -46,7 +46,7 @@ def run_mpt(image_folder, force=False):
     if(force or not os.path.isfile(os.path.join(image_folder, 'tracking_results.pickle'))):
         mot = MPT_WD(output_format='dict', square=False, detection_threshold=0.5, tracker_off=False)
         tracking_results_path = os.path.join(image_folder, "tracking_results.pickle")
-        tracking_results = mot(image_folder, batch_size=1)
+        tracking_results = mot(image_folder, batch_size=64)
         pickle.dump(tracking_results, open(tracking_results_path, "wb"))
 
 async def run_async_mpt(num_of_threads, glob_query):
@@ -57,7 +57,7 @@ async def run_async_mpt(num_of_threads, glob_query):
         tasks.append(in_thread(functools.partial(run_mpt, img_folder)))
     await asyncio.gather(*tasks)
 
-def export_as_ds(output, opt_path, kps_path, images, prefix_to_remove=None, seq_size=None):
+def export_as_ds(output, opt_path, kps_path, images, prefix_to_remove=None, seq_size=None, gender=-1):
     tracking_results = np.load(os.path.join(images, 'tracking_results.pickle'), allow_pickle=True)
     imgnames_, parts_, centers_, scales_, pose_, shape_ = [], [], [], [], [], []
     image_paths = glob.glob(os.path.join(images, "*.png"))
@@ -112,16 +112,21 @@ def export_as_ds(output, opt_path, kps_path, images, prefix_to_remove=None, seq_
         parts_.append(all_kps[good_indices])
 
         imgnames_.append(image_paths[p_tracking_res['frames']][good_indices])
-        
+
     imgnames_ = np.concatenate(imgnames_, axis=0)
-    
-    np.savez(output, imgname=imgnames_,
-                       center=np.concatenate(centers_, axis=1).T,
-                       scale=np.concatenate(scales_, axis=0).ravel(),
-                       part=np.concatenate(parts_, axis=0),
-                       poses=np.concatenate(pose_, axis=0),
-                       shape=np.concatenate(shape_, axis=0),
-                       has_smpl=np.ones(imgnames_.shape[0]))
+    to_save = {
+        "imgname":imgnames_,
+        "center":np.concatenate(centers_, axis=1).T,
+        "scale":np.concatenate(scales_, axis=0).ravel(),
+        "part":np.concatenate(parts_, axis=0),
+        "pose":np.concatenate(pose_, axis=0),
+        "shape":np.concatenate(shape_, axis=0),
+        "has_smpl":np.ones(imgnames_.shape[0])
+    }
+
+    if gender: to_save['gender'] = np.full(imgnames_.shape[0], gender[0])
+
+    np.savez(output, **to_save)
 
 def merge_npz(output, npz_files):
     data_all = [np.load(fname) for fname in npz_files]
@@ -197,10 +202,13 @@ if __name__ == "__main__":
     parser.add_argument('--output', type=str, default='output',
                         help='Output path')
     parser.add_argument('--pymaf_checkpoint', type=str,
-                        help='PyMaf checkpoint')
+                        help='PyMaf checkpoint', default='data/model_best.pt')
     parser.add_argument('--num_of_threads', type=int, default=8,
                         help='Number of threads to use')
-
+    parser.add_argument('--focal_length', type=float, default=25,
+                        help='Focal length to use')
+    parser.add_argument('--aperture', type=float, default=25,
+                        help='Aperture to use')
     args = parser.parse_args()
 
     main(args)
