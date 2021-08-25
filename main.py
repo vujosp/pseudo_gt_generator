@@ -46,7 +46,7 @@ def run_mpt(image_folder, force=False):
     if(force or not os.path.isfile(os.path.join(image_folder, 'tracking_results.pickle'))):
         mot = MPT_WD(output_format='dict', square=False, detection_threshold=0.5, tracker_off=False)
         tracking_results_path = os.path.join(image_folder, "tracking_results.pickle")
-        tracking_results = mot(image_folder, batch_size=64)
+        tracking_results = mot(image_folder, batch_size=1)
         pickle.dump(tracking_results, open(tracking_results_path, "wb"))
 
 async def run_async_mpt(num_of_threads, glob_query):
@@ -57,7 +57,7 @@ async def run_async_mpt(num_of_threads, glob_query):
         tasks.append(in_thread(functools.partial(run_mpt, img_folder)))
     await asyncio.gather(*tasks)
 
-def export_as_ds(output, opt_path, kps_path, images, prefix_to_remove=None, seq_size=None, gender=-1):
+def export_as_ds(output, opt_path, kps_path, images, prefix_to_remove=None, seq_size=None, gender=None):
     tracking_results = np.load(os.path.join(images, 'tracking_results.pickle'), allow_pickle=True)
     imgnames_, parts_, centers_, scales_, pose_, shape_ = [], [], [], [], [], []
     image_paths = glob.glob(os.path.join(images, "*.png"))
@@ -113,20 +113,23 @@ def export_as_ds(output, opt_path, kps_path, images, prefix_to_remove=None, seq_
 
         imgnames_.append(image_paths[p_tracking_res['frames']][good_indices])
 
-    imgnames_ = np.concatenate(imgnames_, axis=0)
-    to_save = {
-        "imgname":imgnames_,
-        "center":np.concatenate(centers_, axis=1).T,
-        "scale":np.concatenate(scales_, axis=0).ravel(),
-        "part":np.concatenate(parts_, axis=0),
-        "pose":np.concatenate(pose_, axis=0),
-        "shape":np.concatenate(shape_, axis=0),
-        "has_smpl":np.ones(imgnames_.shape[0])
-    }
+    if len(imgnames_):
+        imgnames_ = np.concatenate(imgnames_, axis=0)
+        to_save = {
+            "imgname":imgnames_,
+            "center":np.concatenate(centers_, axis=1).T,
+            "scale":np.concatenate(scales_, axis=0).ravel(),
+            "part":np.concatenate(parts_, axis=0),
+            "pose":np.concatenate(pose_, axis=0),
+            "shape":np.concatenate(shape_, axis=0),
+            "has_smpl":np.ones(imgnames_.shape[0])
+        }
 
-    if gender: to_save['gender'] = np.full(imgnames_.shape[0], gender[0])
+        if gender: to_save['gender'] = np.full(imgnames_.shape[0], gender[0])
 
-    np.savez(output, **to_save)
+        np.savez(output, **to_save)
+        return True
+    return False
 
 def merge_npz(output, npz_files):
     data_all = [np.load(fname) for fname in npz_files]
@@ -146,27 +149,25 @@ def main(args):
 
     # all_datasets = []
     # for img_folder in tqdm(glob.glob('/home/wd-vujos/Desktop/h36m_300/images/')):
-    args.output = '/mnt/nas2/temp/vujos/monoperfcap_pseudo_gt/'
-    prefix_to_remove = '/mnt/nas2/datasets/3dpose_datasets/monoperfcap/'
+    args.output = '/mnt/nas2/datasets/pseudo_ds/videos_from_yt/'
+    prefix_to_remove = '/mnt/nas2/datasets/videos_from_yt/'
 
     all_datasets = []
-    female_folders = ['Franzi_studio', 'Nadia_outdoor', 'Natalia_outdoor', 'Simeng_moving_cam', 'Simeng_outdoor', 'Simeng_studio']
-    for img_folder in tqdm(glob.glob('/mnt/nas2/datasets/3dpose_datasets/monoperfcap/*/*/images/')): # We skip first for now
+    args.image_folder = '/mnt/nas2/datasets/videos_from_yt/*/'
+
+    # female_folders = ['Franzi_studio', 'Nadia_outdoor', 'Natalia_outdoor', 'Simeng_moving_cam', 'Simeng_outdoor', 'Simeng_studio']
+    for image_folder in tqdm(glob.glob(args.image_folder)):
+        print(image_folder)
         # if len(glob.glob(img_folder + '*.png')) > 2000:
         #     continue
-
-        actual_image_name = img_folder.split('/')[-3]
-        args.image_folder = img_folder
 
         num_of_threads = args.num_of_threads
 
         pymaf_checkpoint = args.pymaf_checkpoint if os.path.isabs(args.pymaf_checkpoint) else os.path.abspath(args.pymaf_checkpoint)
-        image_folder = args.image_folder
         output_folder = args.output
 
-        output_folder = os.path.join(args.output, actual_image_name) # SPECIFIC CASE!!!
-
-        gender = 'female' if actual_image_name in female_folders else 'male'
+        # gender = 'female' if actual_image_name in female_folders else 'male'
+        gender = 'male'
 
         if not os.path.isabs(output_folder):
             output_folder = os.path.abspath(output_folder)
@@ -190,23 +191,26 @@ def main(args):
         # kps_final = os.path.join(output_folder, 'kps_final', seq_name)
         opt_output = os.path.join(output_folder, 'opt', image_name)
 
-        # run_mpt(image_folder)
-        sub_call(f"python3 test.py --input='{image_folder}' --output '{kps_output}' --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
-        # sub_call(f"python3 demo_wd.py --output_folder='{pymaf_output}' --checkpoint='{pymaf_checkpoint}' --image_folder '{image_folder}' --no_render", os.path.dirname(pymaf_path))
-        # sub_call(f"python3 main.py --img_folders='{image_folder}' --results_3d '{os.path.join(pymaf_output, image_name)}' --kps_results '{kps_output}' --output '{kps_final}'", os.path.dirname(kps_manager_path))
-        # sub_call(f"python3 demo_single_cam.py --gender {gender} --opt_params smpl_pose_3d smpl_betas --img_folders='{image_folder}' --aperture {args.focal_length} --focal_length {args.aperture} --results_3d '{os.path.join(pymaf_output, image_name)}' --results_2d '{kps_final}' --output '{opt_output}'", os.path.dirname(optimizer_path))
+        run_mpt(image_folder)
+        #sub_call(f"python3 test.py --input='{image_folder}' --output '{kps_output}' --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
+        #sub_call(f"python3 demo_wd.py --output_folder='{pymaf_output}' --checkpoint='{pymaf_checkpoint}' --image_folder '{image_folder}' --no_render", os.path.dirname(pymaf_path))
+        #sub_call(f"python3 main.py --img_folders='{image_folder}' --results_3d '{os.path.join(pymaf_output, image_name)}' --kps_results '{kps_output}' --output '{kps_final}'", os.path.dirname(kps_manager_path))
+        #sub_call(f"python3 demo_single_cam.py --gender {gender} --opt_params smpl_pose_3d smpl_betas --img_folders='{image_folder}' --aperture {args.focal_length} --focal_length {args.aperture} --results_3d '{os.path.join(pymaf_output, image_name)}' --results_2d '{kps_final}' --output '{opt_output}'", os.path.dirname(optimizer_path))
         # for opt_npz in glob.glob(os.path.join(opt_output, "*_blender_params_optimization.npz")):
         #     p_id = os.path.basename(opt_npz).split('_')[0]
-        #     blender_output = os.path.join(output_folder, 'blender', actual_image_name, p_id + '.blend')
+        #     blender_output = os.path.join(output_folder, 'blender', image_name, p_id + '.blend')
         #     # if seq_name == image_name:
         #     sub_call(f"blender --background --python output_to.py -- --aperture {args.focal_length} --focal_length {args.aperture} --fbx_file smpl_{gender} --cam_type PERSP --name {p_id}_orig --color '0.8,0.8,0.8,1' --background_image='{image_folder}' --npz_file '{os.path.join(pymaf_output, image_name, p_id + '_blender_params.npz')}' --blender_file_path '{blender_output}'", os.path.dirname(sdg_path))
         #         # sub_call(f"blender {blender_output} --background --python output_to.py -- --keep_scene --fbx_file smpl_male --cam_type PERSP --name {p_id}_gt --color '0.2,0.2,0.2,1' --background_image='{image_folder}' --npz_file /home/wd-vujos/Desktop/h36m_300/h36m_test/{p_id}_h36m_300.npz --blender_file_path '{blender_output}'", os.path.dirname(sdg_path))
         #     sub_call(f"blender {blender_output} --background --python output_to.py -- --keep_scene --fbx_file smpl_{gender} --cam_type PERSP --name {p_id}_optim --color '1,0,0,1' --background_image='{image_folder}' --npz_file '{os.path.join(opt_output, p_id + '_blender_params_optimization.npz')}' --blender_file_path '{blender_output}'", os.path.dirname(sdg_path))
         #     os.remove(blender_output + "1")
-        #     # export_as_ds(os.path.join(output_folder, 'ds_test', seq_name), opt_output, kps_final, args.image_folder, prefix_to_remove)
-        #export_as_ds(os.path.join(output_folder, 'dataset'), opt_output, kps_final, args.image_folder, prefix_to_remove, gender=gender)
-        #all_datasets.append(os.path.join(output_folder, 'dataset.npz'))
-    #merge_npz(os.path.join(args.output, 'datasets.npz'), all_datasets)
+            # export_as_ds(os.path.join(output_folder, 'ds_test', image_name), opt_output, kps_final, image_folder, prefix_to_remove)
+    #     ds_path = os.path.join(output_folder, 'datasets', 'all', image_name)
+    #     os.makedirs(os.path.join(output_folder, 'datasets', 'all'), exist_ok=True)
+    #     succ = export_as_ds(ds_path, opt_output, kps_final, image_folder, prefix_to_remove, gender=None)
+    #     if succ:
+    #         all_datasets.append(ds_path + ".npz")
+    # merge_npz(os.path.join(args.output, 'datasets', 'datasets_all.npz'), all_datasets)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
