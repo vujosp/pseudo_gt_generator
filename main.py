@@ -42,19 +42,19 @@ def set_in_thread(num_of_threads):
         return await loop.run_in_executor(_executor, func)
     return in_thread
 
-def run_mpt(image_folder, force=False):
+def run_mpt(image_folder, min_frame_num=None, force=False):
     if(force or not os.path.isfile(os.path.join(image_folder, 'tracking_results.pickle'))):
         mot = MPT_WD(output_format='dict', square=False, detection_threshold=0.5, tracker_off=False)
         tracking_results_path = os.path.join(image_folder, "tracking_results.pickle")
-        tracking_results = mot(image_folder, batch_size=1)
+        tracking_results = mot(image_folder, batch_size=1, min_frame_num=min_frame_num)
         pickle.dump(tracking_results, open(tracking_results_path, "wb"))
 
-async def run_async_mpt(num_of_threads, glob_query):
+async def run_async_mpt(num_of_threads, glob_query, min_frame_num=None):
     in_thread = set_in_thread(num_of_threads)
     img_folders = glob.glob(glob_query)
     tasks = []
     for img_folder in img_folders:
-        tasks.append(in_thread(functools.partial(run_mpt, img_folder)))
+        tasks.append(in_thread(functools.partial(run_mpt, img_folder, min_frame_num)))
     await asyncio.gather(*tasks)
 
 def export_as_ds(output, opt_path, kps_path, images, prefix_to_remove=None, seq_size=None, gender=None):
@@ -158,9 +158,6 @@ def main(args):
     # female_folders = ['Franzi_studio', 'Nadia_outdoor', 'Natalia_outdoor', 'Simeng_moving_cam', 'Simeng_outdoor', 'Simeng_studio']
     for image_folder in tqdm(glob.glob(args.image_folder)):
         print(image_folder)
-        # if len(glob.glob(img_folder + '*.png')) > 2000:
-        #     continue
-
         num_of_threads = args.num_of_threads
 
         pymaf_checkpoint = args.pymaf_checkpoint if os.path.isabs(args.pymaf_checkpoint) else os.path.abspath(args.pymaf_checkpoint)
@@ -191,11 +188,11 @@ def main(args):
         # kps_final = os.path.join(output_folder, 'kps_final', seq_name)
         opt_output = os.path.join(output_folder, 'opt', image_name)
 
-        run_mpt(image_folder)
-        #sub_call(f"python3 test.py --input='{image_folder}' --output '{kps_output}' --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
-        #sub_call(f"python3 demo_wd.py --output_folder='{pymaf_output}' --checkpoint='{pymaf_checkpoint}' --image_folder '{image_folder}' --no_render", os.path.dirname(pymaf_path))
-        #sub_call(f"python3 main.py --img_folders='{image_folder}' --results_3d '{os.path.join(pymaf_output, image_name)}' --kps_results '{kps_output}' --output '{kps_final}'", os.path.dirname(kps_manager_path))
-        #sub_call(f"python3 demo_single_cam.py --gender {gender} --opt_params smpl_pose_3d smpl_betas --img_folders='{image_folder}' --aperture {args.focal_length} --focal_length {args.aperture} --results_3d '{os.path.join(pymaf_output, image_name)}' --results_2d '{kps_final}' --output '{opt_output}'", os.path.dirname(optimizer_path))
+        # run_mpt(image_folder, args.min_frame_num)
+        # sub_call(f"python3 test.py --input='{image_folder}' --output '{kps_output}' --num_of_threads {num_of_threads}", os.path.dirname(darkpose_path))
+        # sub_call(f"python3 demo_wd.py --skip_existing --output_folder='{pymaf_output}' --checkpoint='{pymaf_checkpoint}' --image_folder '{image_folder}' --no_render", os.path.dirname(pymaf_path))
+        # sub_call(f"python3 main.py --img_folders='{image_folder}' --results_3d '{os.path.join(pymaf_output, image_name)}' --kps_results '{kps_output}' --output '{kps_final}'", os.path.dirname(kps_manager_path))
+        sub_call(f"python3 demo_single_cam.py --gender {gender} --opt_params smpl_pose_3d smpl_betas --img_folders='{image_folder}' --aperture {args.focal_length} --focal_length {args.aperture} --results_3d '{os.path.join(pymaf_output, image_name)}' --results_2d '{kps_final}' --output '{opt_output}'", os.path.dirname(optimizer_path))
         # for opt_npz in glob.glob(os.path.join(opt_output, "*_blender_params_optimization.npz")):
         #     p_id = os.path.basename(opt_npz).split('_')[0]
         #     blender_output = os.path.join(output_folder, 'blender', image_name, p_id + '.blend')
@@ -225,6 +222,8 @@ if __name__ == "__main__":
                         help='PyMaf checkpoint', default='data/model_best.pt')
     parser.add_argument('--num_of_threads', type=int, default=8,
                         help='Number of threads to use')
+    parser.add_argument('--min_frame_num', type=int, default=32,
+                        help='Min number of frames person need to be on')
     parser.add_argument('--focal_length', type=float, default=25,
                         help='Focal length to use')
     parser.add_argument('--aperture', type=float, default=25,
